@@ -483,23 +483,11 @@ class dff_importer:
             return -math.asin( sine_roll ) - math.pi
 
     #######################################################
-    def get_skinned_obj_index(frame, frame_index):
+    def get_skinned_obj_indices(frame, frame_index):
         self = dff_importer
 
-        possible_frames = [
-            frame.parent, # The parent frame 
-            frame_index - 1, # The previous frame
-            0 # The first frame
-        ]
-        
-        for possible_frame in possible_frames:
-            
-            if possible_frame in self.skin_data:
-                return possible_frame
-
-        # Find an arbritary frame
-        for _, index in enumerate(self.skin_data):
-            return index
+        if self.skin_data:
+            return list(self.skin_data)
 
         raise Exception("Cannot construct an armature without skinned mesh")
         
@@ -507,18 +495,18 @@ class dff_importer:
     def construct_armature(frame, frame_index):
 
         self = dff_importer
-        
+        frame.name='bones'
         armature = bpy.data.armatures.new(frame.name)
         obj = bpy.data.objects.new(frame.name, armature)
         link_object(obj, dff_importer.current_collection)
 
         try:
-            skinned_obj_index = self.get_skinned_obj_index(frame, frame_index)
+            skinned_obj_indeces = self.get_skinned_obj_indices(frame, frame_index)
         except Exception as e:
             raise e
         
-        skinned_obj_data = self.skin_data[skinned_obj_index]
-        skinned_obj = self.objects[skinned_obj_index]
+        skinned_obj_data = self.skin_data[skinned_obj_indeces[0]]
+        skinned_objs = [self.objects[index] for index in skinned_obj_indeces]
         
         # armature edit bones are only available in edit mode :/
         set_object_mode(obj, "EDIT")
@@ -530,8 +518,9 @@ class dff_importer:
             
             bone_frame = self.bones[bone.id]['frame']
 
-            # Set vertex group name of the skinned object
-            skinned_obj.vertex_groups[index].name = bone_frame.name
+            # Set vertex group name of the skinned objects
+            for skinned_obj in skinned_objs:
+                skinned_obj.vertex_groups[index].name = bone_frame.name
             
             e_bone = edit_bones.new(bone_frame.name)
             e_bone.tail = (0,0.05,0) # Stop bone from getting delete
@@ -581,9 +570,10 @@ class dff_importer:
                     
         set_object_mode(obj, "OBJECT")
 
-        # Add Armature modifier to skinned object
-        modifier        = skinned_obj.modifiers.new("Armature", 'ARMATURE')
-        modifier.object = obj
+        # Add Armature modifier to skinned objects
+        for skinned_obj in skinned_objs:
+            modifier        = skinned_obj.modifiers.new("Armature", 'ARMATURE')
+            modifier.object = obj
         
         return (armature, obj)
 
