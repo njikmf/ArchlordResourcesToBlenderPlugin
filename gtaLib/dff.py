@@ -1652,6 +1652,7 @@ class dff:
                     
                 elif chunk.type == types["HAnim PLG"]:
                     bone_data = HAnimPLG.from_mem(self.raw(chunk.size))
+                    name='frame'+str(bone_data.header.id)
 
                 elif chunk.type == types["User Data PLG"]:
                     user_data = UserData.from_mem(self.raw(chunk.size))
