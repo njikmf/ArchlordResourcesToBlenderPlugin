@@ -114,7 +114,14 @@ class dff_importer:
 
             frame = self.dff.frame_list[atomic.frame]
             geom = self.dff.geometry_list[atomic.geometry]
-
+            ud= geom.extensions['user_data']
+            print(ud)
+            if ud is not None:
+                for sec in ud.sections:
+                    if not sec.name.startswith('PartID'):
+                        continue
+                    frame.name=str(sec.data[0])
+                    break
             mesh = bpy.data.meshes.new(frame.name)
             bm   = bmesh.new()
 
