@@ -89,6 +89,12 @@ class dff_importer:
             return a * b
         return a @ b
     
+    def has_skin():
+        self=dff_importer
+        if self.skin_data:
+            return True
+        return False
+        
     #######################################################
     def _init():
         self = dff_importer
@@ -251,10 +257,11 @@ class dff_importer:
 
                 self.warning = \
                 "Multiple Meshes with same Atomic index. Export will be invalid."
-                
+                print("atomic frame "+str(atomic.frame)+" exist")
                 pass
             else:
                 self.meshes[atomic.frame] = mesh
+                print("add frame "+str(atomic.frame))
                 self.delta_morph[atomic.frame] = geom.extensions.get('delta_morph')
 
 
@@ -469,8 +476,43 @@ class dff_importer:
             if frame.bone_data:
                 bone_id = frame.bone_data.header.id
                 if bone_id != -1:
-                    self.bones[bone_id] = {'frame': frame,
-                                              'index': index}
+                    self.bones[bone_id] = {'frame': frame, 'index': index}
+        
+        if self.has_skin():
+            return
+        
+        #H000c900
+        arm = bpy.data.armatures.new('')
+        obj = bpy.data.objects.new(arm.name, arm)
+        link_object(obj, dff_importer.current_collection)
+
+        set_object_mode(obj, "EDIT")
+        ebs = arm.edit_bones
+        
+        for fra in self.dff.frame_list:
+            if fra.bone_data is None:
+                continue
+            bn=str(fra.bone_data.header.id)
+            if bn in ebs:
+                p=ebs[bn]
+            else:
+                p=ebs.new(bn)
+
+            p.head=fra.position
+            print("set ",fra.position,p.head)
+            p.tail=(p.head[0],p.head[1]+1,p.head[2])
+
+            for bo in fra.bone_data.bones:
+                bn=str(bo.id)
+                if bn in ebs:
+                    continue
+                eb=ebs.new(bn)
+                eb.parent=p
+                eb.head=fra.position
+                eb.tail=(eb.head[0],eb.head[1]+1,eb.head[2])
+        
+        set_object_mode(obj,"OBJECT")
+        #bpy.ops.object.mode_set(mode='OBJECT')
                         
     #######################################################
     def align_roll( vec, vecz, tarz ):
@@ -489,45 +531,53 @@ class dff_importer:
         else:
             return -math.asin( sine_roll ) - math.pi
 
+        
     #######################################################
     def get_skinned_obj_indices(frame, frame_index):
         self = dff_importer
 
-        if self.skin_data:
+        print(self.skin_data)
+        if self.skin_data and len(self.skin_data)>0:
             return list(self.skin_data)
 
         raise Exception("Cannot construct an armature without skinned mesh")
+        return 
         
     #######################################################
+    
     def construct_armature(frame, frame_index):
 
         self = dff_importer
-        frame.name='bones'
-        armature = bpy.data.armatures.new(frame.name)
-        obj = bpy.data.objects.new(frame.name, armature)
-        link_object(obj, dff_importer.current_collection)
 
         try:
             skinned_obj_indeces = self.get_skinned_obj_indices(frame, frame_index)
         except Exception as e:
             raise e
+        frame.name='bones'
+        armature = bpy.data.armatures.new(frame.name)
         
-        skinned_obj_data = self.skin_data[skinned_obj_indeces[0]]
-        skinned_objs = [self.objects[index] for index in skinned_obj_indeces]
+        obj = bpy.data.objects.new(frame.name, armature)
+        link_object(obj, dff_importer.current_collection)
+
+        # return (None,None)
+        if skinned_obj_indeces is not None:
+            skinned_obj_data = self.skin_data[skinned_obj_indeces[0]]
+            skinned_objs = [self.objects[index] for index in skinned_obj_indeces]
         
         # armature edit bones are only available in edit mode :/
         set_object_mode(obj, "EDIT")
         edit_bones = obj.data.edit_bones
         
         bone_list = {}
-                        
+        
         for index, bone in enumerate(frame.bone_data.bones):
             
             bone_frame = self.bones[bone.id]['frame']
 
-            # Set vertex group name of the skinned objects
-            for skinned_obj in skinned_objs:
-                skinned_obj.vertex_groups[index].name = bone_frame.name
+            # Set vertex group name of the skinned objects       H000c900
+            if skinned_obj_indeces is not None:
+                for skinned_obj in skinned_objs:
+                    skinned_obj.vertex_groups[index].name = bone_frame.name
             
             e_bone = edit_bones.new(bone_frame.name)
             e_bone.tail = (0,0.05,0) # Stop bone from getting delete
@@ -538,49 +588,51 @@ class dff_importer:
             if bone_frame.user_data is not None:
                 e_bone['dff_user_data'] = bone_frame.user_data.to_mem()[12:]
             
-            matrix = skinned_obj_data.bone_matrices[bone.index]
-            matrix = mathutils.Matrix(matrix).transposed()
-            matrix = matrix.inverted()
+            if skinned_obj_indeces is None:
+                matrix =[(frame.rotation_matrix.right.x,frame.rotation_matrix.right.y,frame.rotation_matrix.right.z,0),
+                (frame.rotation_matrix.up.x,frame.rotation_matrix.up.y,frame.rotation_matrix.up.z,0),
+                (frame.rotation_matrix.at.x,frame.rotation_matrix.at.y,frame.rotation_matrix.at.z,0),
+                (frame.position.x,frame.position.y,frame.position.z,1)]
+                e_bone.transform(matrix)
+            else:
+                matrix = skinned_obj_data.bone_matrices[bone.index]
+                matrix = mathutils.Matrix(matrix).transposed()
+                matrix = matrix.inverted()
 
-            e_bone.transform(matrix, scale=True, roll=False)
-            e_bone.roll = self.align_roll(e_bone.vector,
-                                          e_bone.z_axis,
-                                          self.multiply_matrix(
-                                              matrix.to_3x3(),
-                                              mathutils.Vector((0,0,1))
-                                          )
-            )
+                e_bone.transform(matrix, scale=True, roll=False)
+                e_bone.roll = self.align_roll(e_bone.vector,
+                                              e_bone.z_axis,
+                                              self.multiply_matrix(
+                                                  matrix.to_3x3(),
+                                                  mathutils.Vector((0,0,1))
+                                              )
+                )
             
             # Setting parent. See "set parent" note below
             if bone_frame.parent != -1:
                 try:
                     e_bone.parent = bone_list[bone_frame.parent][0]
                     if self.use_bone_connect:
-
                         if not bone_list[bone_frame.parent][1]:
-
                             mat = [e_bone.parent.head, e_bone.parent.tail, e_bone.head]
                             mat = mathutils.Matrix(mat)
                             if abs(mat.determinant()) < 0.0000001:
-                                
                                 length = (e_bone.parent.head - e_bone.head).length
                                 e_bone.length      = length
                                 e_bone.use_connect = self.use_bone_connect
-                            
                                 bone_list[bone_frame.parent][1] = True
                         
                 except BaseException:
                     print("DragonFF: Bone parent not found")
             
             bone_list[self.bones[bone.id]['index']] = [e_bone, False]
-            
-                    
         set_object_mode(obj, "OBJECT")
 
         # Add Armature modifier to skinned objects
-        for skinned_obj in skinned_objs:
-            modifier        = skinned_obj.modifiers.new("Armature", 'ARMATURE')
-            modifier.object = obj
+        if skinned_obj_indeces is not None:
+            for skinned_obj in skinned_objs:
+                modifier        = skinned_obj.modifiers.new("Armature", 'ARMATURE')
+                modifier.object = obj
         
         return (armature, obj)
 
@@ -605,6 +657,10 @@ class dff_importer:
     def remove_object_doubles():
         self = dff_importer
 
+        print("obj ",type(self.objects), self.objects)
+        print("mesh ",type(self.meshes), self.meshes)
+        #print(self.objects[0],self.objects[1])
+        result=[]
         for frame in self.meshes:
             bm = bmesh.new()
             bm.from_mesh(self.meshes[frame])
@@ -615,14 +671,22 @@ class dff_importer:
                     edge.smooth = False
             
             bmesh.ops.remove_doubles(bm, verts = bm.verts, dist = 0.00001)
-
             # Add an edge split modifier
+            if frame >= len(self.objects):
+                print("frame ",frame ," not in objects,skip EdgeSplit")
+                continue
             object   = self.objects[frame]
             modifier = object.modifiers.new("EdgeSplit", 'EDGE_SPLIT')
+            if modifier is None:
+                print(frame," modifier fail")
+                continue
             modifier.use_edge_angle = False
             
             bm.to_mesh(self.meshes[frame])
-                
+            result.append(frame)
+
+        print("EdgeSplit = ",result)
+
     #######################################################
     def import_frames():
         self = dff_importer
@@ -651,22 +715,24 @@ class dff_importer:
             
             matrix.transpose()
 
+            use_bp=True
             if frame.bone_data is not None:
                 
                 # Construct an armature
                 if frame.bone_data.header.bone_count > 0:
                     try:
                         mesh, obj = self.construct_armature(frame, index)
+                        use_bp=False
                     except Exception as e:
                         print(e)
-                        continue
-                    
+                        #continue
                 # Skip bones
                 elif frame.bone_data.header.id in self.bones and mesh is None:
                     continue
                     
             # Create and link the object to the scene
             if obj is None:
+
                 obj = bpy.data.objects.new(frame.name, mesh)
                 link_object(obj, dff_importer.current_collection)
 
@@ -706,7 +772,17 @@ class dff_importer:
             # that have not yet been defined. If I come across such
             # a model, the code will be modified to support that
 
-            if  frame.parent != -1:
+            if use_bp and frame.bone_data is not None:
+                bn=str(frame.bone_data.header.id)
+                arm=bpy.data.objects['Armature']
+                obj.parent=arm
+                obj.parent_type='BONE'
+                obj.parent_bone=bn
+                #set_object_mode(arm,"OBJECT")
+            elif  frame.parent != -1:
+                if frame.parent not in self.objects:
+                    print (dff.vars2(frame))
+                    print(dff.vars2(self.objects))
                 obj.parent = self.objects[frame.parent]
 
             # Add shape keys by delta morph
@@ -735,6 +811,7 @@ class dff_importer:
             if frame.user_data is not None:
                 obj["dff_user_data"] = frame.user_data.to_mem()[12:]
 
+        print(self.objects)
         if self.remove_doubles:
             self.remove_object_doubles()
 
@@ -756,6 +833,7 @@ class dff_importer:
 
             atomic_frames.append(atomic.frame)
 
+        
         # Assign every atomic in the list a new (possibly valid) frame
         for atomic in to_be_preprocessed:
             
@@ -768,7 +846,7 @@ class dff_importer:
                     _atomic[0] = index # _atomic.frame = index
                     self.dff.atomic_list[atomic] = dff.Atomic(*_atomic)
                     break
-                    
+        
             
     #######################################################
     def import_dff(file_name):
@@ -780,7 +858,7 @@ class dff_importer:
         self.dff.load_file(file_name)
         self.file_name = file_name
 
-        self.preprocess_atomics()
+        #self.preprocess_atomics()
         
         # Create a new group/collection
         self.current_collection = create_collection(
@@ -815,7 +893,12 @@ def import_dff(options):
     dff_importer.remove_doubles   = options['remove_doubles']
     dff_importer.group_materials  = options['group_materials']
     dff_importer.import_normals   = options['import_normals']
-
+    
+    for a in bpy.context.screen.areas:
+        if a.type == 'VIEW_3D':
+            for s in a.spaces:
+                if s.type == 'VIEW_3D':
+                    s.clip_end = 99999                
     dff_importer.import_dff(options['file_name'])
 
     return dff_importer

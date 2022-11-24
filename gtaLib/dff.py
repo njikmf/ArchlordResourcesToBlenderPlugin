@@ -17,6 +17,7 @@
 from collections import namedtuple
 from struct import unpack_from, calcsize, pack
 from enum import Enum, IntEnum
+import math
 
 # Data types
 Chunk       = namedtuple("Chunk"       , "type size version")
@@ -107,6 +108,33 @@ types = {
     "Frame"                   : 39056126,
 }
 
+def fraction(n):
+    return n-math.floor(n)
+    
+def vars2(x):
+    ret = {}
+    if hasattr(x, '__slots__'):
+        for slot in x.__slots__:
+            x1=getattr(x, slot)
+            ret[slot]=vars2(x1)
+
+    if hasattr(x, '_asdict'):
+        ret.update(x._asdict())
+        
+    if hasattr(x, '__dict__'):
+        ret.update(vars(x))
+        
+    if len(ret)>0:
+        return ret
+    return x
+        # for cls in type(x).mro():
+            # spr = super(cls, x)
+            # if not hasattr(spr, '__slots__'):
+                # break
+            # for slot in spr.__slots__:
+                # ret[slot] = getattr(x, slot)
+
+        
 #######################################################
 def strlen(bytes, offset=0):
 
@@ -327,6 +355,7 @@ class Material:
         if plugin is None:
             return
 
+        print(vars2(plugin))
         if key not in self.plugins:
             self.plugins[key] = []
 
@@ -1434,6 +1463,15 @@ class Geometry:
                     for j in range(num_vertices):
                         
                         tex_coord = Sections.read(TexCoords, data, pos)
+                        #print(tex_coord)
+                        # if tex_coord.u<-1:
+                            # tex_coord=TexCoords(fraction(tex_coord.u),tex_coord.v)
+                        # if tex_coord.u>1:
+                            # tex_coord=TexCoords(fraction(tex_coord.u),tex_coord.v)
+                        # if tex_coord.v<-1:
+                            # tex_coord=TexCoords(tex_coord.u,fraction(tex_coord.v))
+                        # if tex_coord.v>1:
+                            # tex_coord=TexCoords(tex_coord.u,fraction(tex_coord.v))
                         self.uv_layers[i].append(tex_coord)
                         pos += 8
 
@@ -1456,6 +1494,7 @@ class Geometry:
         if self.has_vertices:
             for i in range(num_vertices):
                 vertice = Sections.read(Vector, data, pos)
+                #vertice=Vector(vertice.z,vertice.y,vertice.x)
                 self.vertices.append(vertice)
                 pos += 12
             
@@ -1662,8 +1701,10 @@ class dff:
                     self.frame_list[i].name = name
                 if bone_data is not None:
                     self.frame_list[i].bone_data = bone_data
+
                 if user_data is not None:
                     self.frame_list[i].user_data = user_data
+            print("frame "+str(i)+" ",vars2(self.frame_list[i]))
 
             if self.frame_list[i].name is None:
                 self.frame_list[i].name = "unnamed"
@@ -2043,7 +2084,7 @@ class dff:
                             
                             skin = SkinPLG.from_mem(self.data[self.pos:], geometry)
                             geometry.extensions["skin"] = skin
-                            
+                            print("skin ",vars2(skin))
                             self._read(chunk.size)
 
                         elif chunk.type == types["Extra Vert Color"]:
@@ -2056,6 +2097,7 @@ class dff:
                         elif chunk.type == types["User Data PLG"]:
                             geometry.extensions['user_data'] = \
                                 UserData.from_mem(self.data[self.pos:])
+                            print(vars2(geometry.extensions['user_data']))
 
                         # 2dfx (usually at the last geometry index)
                         elif chunk.type == types["2d Effect"]:
@@ -2087,6 +2129,7 @@ class dff:
             if chunk.type == types["Struct"]:
                 atomic = Sections.read(Atomic, self.data, self.pos)
                 self.atomic_list.append(atomic)
+                #print("read atomic ",atomic._asdict())
 
             if chunk.type == types["Extension"]:
                 self.pos -= chunk.size

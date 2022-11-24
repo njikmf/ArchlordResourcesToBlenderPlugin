@@ -172,7 +172,6 @@ class material_helper:
         
     #######################################################
     def set_uv_animation(self, uv_anim):
-
         #TODO: Add Blender Internal Support for this
         
         if self.principled:
