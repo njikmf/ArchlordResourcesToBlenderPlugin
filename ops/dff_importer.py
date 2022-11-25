@@ -716,6 +716,7 @@ class dff_importer:
             matrix.transpose()
 
             use_bp=True
+            #use_bp=False
             if frame.bone_data is not None:
                 
                 # Construct an armature
@@ -738,7 +739,8 @@ class dff_importer:
 
                 obj.rotation_mode       = 'QUATERNION'
                 obj.rotation_quaternion = matrix.to_quaternion()
-                obj.location            = frame.position
+                if self.has_skin():
+                    obj.location            = frame.position
                 obj.scale               = matrix.to_scale()
 
 
@@ -772,18 +774,20 @@ class dff_importer:
             # that have not yet been defined. If I come across such
             # a model, the code will be modified to support that
 
-            if use_bp and frame.bone_data is not None:
-                bn=str(frame.bone_data.header.id)
-                arm=bpy.data.objects['Armature']
-                obj.parent=arm
-                obj.parent_type='BONE'
-                obj.parent_bone=bn
-                #set_object_mode(arm,"OBJECT")
-            elif  frame.parent != -1:
-                if frame.parent not in self.objects:
-                    print (dff.vars2(frame))
-                    print(dff.vars2(self.objects))
-                obj.parent = self.objects[frame.parent]
+            if self.has_skin():
+                if frame.parent != -1:
+                    if frame.parent not in self.objects:
+                        print (dff.vars2(frame))
+                        print(dff.vars2(self.objects))
+                    obj.parent = self.objects[frame.parent]
+            else:
+                if frame.bone_data is not None:
+                    bn=str(frame.bone_data.header.id)
+                    arm=bpy.data.objects['Armature']
+                    obj.parent=arm
+                    obj.parent_type='BONE'
+                    obj.parent_bone=bn
+                    #set_object_mode(arm,"OBJECT")
 
             # Add shape keys by delta morph
             delta_morph = self.delta_morph.get(index)

@@ -160,7 +160,7 @@ class IMPORT_OT_dff(bpy.types.Operator, ImportHelper):
     bl_description = 'Import a Renderware DFF or COL File'
     bl_label       = "DragonFF DFF (.ecl)"
 
-    filter_glob   : bpy.props.StringProperty(default="*.dff;*.col;*.ecl",
+    filter_glob   : bpy.props.StringProperty(default="*.dff;*.col;*.ecl;*.rws",
                                               options={'HIDDEN'})
     
     directory     : bpy.props.StringProperty(maxlen=1024,
