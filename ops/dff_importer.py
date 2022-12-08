@@ -494,22 +494,24 @@ class dff_importer:
                 continue
             bn=str(fra.bone_data.header.id)
             if bn in ebs:
-                p=ebs[bn]
-            else:
-                p=ebs.new(bn)
-
+                print(bn,"already created")
+                raise Exception("")
+            
+            p=ebs.new(bn)
+            #p.use_relative_parent=True
             p.head=fra.position
-            print("set ",fra.position,p.head)
+            #print("set ",fra.position,p.head)
             p.tail=(p.head[0],p.head[1]+1,p.head[2])
 
-            for bo in fra.bone_data.bones:
-                bn=str(bo.id)
-                if bn in ebs:
-                    continue
-                eb=ebs.new(bn)
-                eb.parent=p
-                eb.head=fra.position
-                eb.tail=(eb.head[0],eb.head[1]+1,eb.head[2])
+            if fra.parent <0:
+                continue
+            
+            pf=self.dff.frame_list[fra.parent]
+            #print(dff.vars2(pf))
+            if pf.bone_data is None:
+                continue
+            pbn=str(pf.bone_data.header.id)
+            p.parent =ebs[pbn]
         
         set_object_mode(obj,"OBJECT")
         #bpy.ops.object.mode_set(mode='OBJECT')
@@ -554,9 +556,9 @@ class dff_importer:
         except Exception as e:
             raise e
         frame.name='bones'
-        armature = bpy.data.armatures.new(frame.name)
+        armature = bpy.data.armatures.new("")
         
-        obj = bpy.data.objects.new(frame.name, armature)
+        obj = bpy.data.objects.new(armature.name, armature)
         link_object(obj, dff_importer.current_collection)
 
         # return (None,None)
@@ -687,6 +689,20 @@ class dff_importer:
 
         print("EdgeSplit = ",result)
 
+    def set_parent_bone(obj,id,kt):
+        bn=str(id)
+        arm=bpy.data.objects['Armature']
+        if arm==obj:
+            return
+        obj.parent=arm
+        obj.parent_type='BONE'
+        obj.parent_bone=bn
+        if not kt:
+            return
+        bone=arm.pose.bones.get(bn)
+        #obj.matrix_parent_inverse=(arm.matrix_world * mathutils.Matrix.Translation(bone.tail - bone.head) * bone.matrix).inverted()
+        obj.matrix_parent_inverse=bone.matrix.inverted()
+        
     #######################################################
     def import_frames():
         self = dff_importer
@@ -777,17 +793,21 @@ class dff_importer:
             if self.has_skin():
                 if frame.parent != -1:
                     if frame.parent not in self.objects:
-                        print (dff.vars2(frame))
+                        print("frame.parent not in self.objects", dff.vars2(frame))
                         print(dff.vars2(self.objects))
-                    obj.parent = self.objects[frame.parent]
+                        for fra in self.dff.frame_list:
+                            if fra.parent!=index:
+                                continue
+                            print("set parent bone",fra.bone_data.header.id)
+                            self.set_parent_bone(obj,fra.bone_data.header.id,True)
+                            break
+                        if obj.parent is None and frame.bone_data is not None:
+                            self.set_parent_bone(obj,frame.bone_data.header.id,True)
+                    else:
+                        obj.parent = self.objects[frame.parent]
             else:
                 if frame.bone_data is not None:
-                    bn=str(frame.bone_data.header.id)
-                    arm=bpy.data.objects['Armature']
-                    obj.parent=arm
-                    obj.parent_type='BONE'
-                    obj.parent_bone=bn
-                    #set_object_mode(arm,"OBJECT")
+                    self.set_parent_bone(obj,frame.bone_data.header.id,False)
 
             # Add shape keys by delta morph
             delta_morph = self.delta_morph.get(index)
